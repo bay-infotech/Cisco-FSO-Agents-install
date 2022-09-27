@@ -1,0 +1,21 @@
+---
+###############################################################
+# This playbook installs Docker and an Apache Web Server and
+# opens ports on the firewall
+###############################################################
+#- name: Pause for 30 seconds and wait for all virtual machines to be up and running
+# Pause for 30 seconds and wait for all virtual machines to be up and running
+# -  pause:
+#     seconds: 30
+
+- name: Install and manage one or more Apache Web Server(s)
+  hosts: all
+  #debugger: on_failed
+  become: yes
+  tasks:
+    - name: Include group variables
+      include_vars:
+        file: variables.yml
+    - name: Install the AppDynamics Machine agent
+      include_role:
+        name: machine-agent

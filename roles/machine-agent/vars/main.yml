@@ -1,0 +1,7 @@
+---
+###############################################################
+# Variables for the AppDynamics machine agent can be defined
+# here. In this example, we defined all variables in the
+# encrypted file named variables.yml
+###############################################################
+

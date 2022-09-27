@@ -1,0 +1,293 @@
+
+##################################################################################
+# VARIABLES
+##################################################################################
+
+variable "vsphere_user" {
+  description = "vSphere administrator username"
+  type        = string
+  sensitive   = true
+}
+
+variable "vsphere_password" {
+  description = "vSphere administrator password"
+  type        = string
+  sensitive   = true
+}
+variable "vsphere_server" {
+  description = "vSphere IP Address or FQDN"
+  type        = string
+  sensitive   = true
+}
+variable "ssh-pub-key" {
+  description = "Service Account SSH pub key"
+  type        = string
+  sensitive   = true
+}
+
+
+variable "vault-password" {
+  description = "Ansible Vault Password for Variables.yml"
+  type        = string
+  sensitive   = true
+}
+
+variable "service_account_username" {
+  description = "Service account username"
+  type        = string
+  sensitive   = true
+}
+
+variable "service_account_password" {
+  description = "Service account password"
+  type        = string
+  sensitive   = true
+}
+
+variable "ansible_host" {
+  description = "Service account username"
+  type        = string
+  sensitive   = true
+}
+
+variable "controller_url" {
+  description = "AppDynamics controller URL"
+  type        = string
+  sensitive   = true
+}
+
+variable "controller_account" {
+  description = "DevNet AppDynamics controller account name"
+  type        = string
+  sensitive   = true
+}
+
+variable "controller_username" {
+  description = "DevNet AppDynamics controller username"
+  type        = string
+  sensitive   = true
+}
+
+variable "controller_password" {
+  description = "DevNet AppDynamics controller password"
+  type        = string
+  sensitive   = true
+}
+
+variable "controller_accessKey" {
+  description = "DevNet AppDynamics controller access key"
+  type        = string
+  sensitive   = true
+}
+
+##################################################################################
+# PROVIDERS
+##################################################################################
+
+provider "vsphere" {
+  user = var.vsphere_user
+  password = var.vsphere_password
+  vsphere_server = var.vsphere_server
+
+  # If you have a self-signed cert
+  allow_unverified_ssl = true
+}
+
+terraform {
+  required_providers {
+    kubernetes = {
+      source  = "hashicorp/kubernetes"
+      version = "2.9.0"
+    }
+    helm = {
+      source = "hashicorp/helm"
+      version = "2.5.0"
+    }
+ }
+}
+
+provider "kubernetes" {
+  config_path = "IKS-Cluster01-kubeconfig.yml" # NOTE: Change this value to your kubeconfig file
+}
+
+provider "helm" {
+  kubernetes {
+    config_path = "IKS-Cluster01-kubeconfig.yml"
+  }
+}
+
+resource "kubernetes_namespace" "appdynamics" {
+  metadata {
+    name = "appdynamics"
+  }
+}
+
+##################################################################################
+# DATA
+##################################################################################
+
+data "vsphere_datacenter" "dc" {
+  name = "BIT-DC01"
+  #name = "DEVNET-DMZ"
+}
+
+data "vsphere_datastore" "datastore" {
+  name          = "esx01-datastore1"
+  #name          = "hx-demo-ds1"
+  datacenter_id = "${data.vsphere_datacenter.dc.id}"
+}
+
+data "vsphere_compute_cluster" "cluster" {
+  name          = "General"
+  #name          = "hx-demo"
+  datacenter_id = "${data.vsphere_datacenter.dc.id}"
+}
+
+data "vsphere_network" "network" {
+  name          = "BIT-DVS01-VLAN52"
+  #name          = "Management"
+  datacenter_id = "${data.vsphere_datacenter.dc.id}"
+}
+
+data "vsphere_virtual_machine" "template" {
+  name          = "CentOS-7-Template"
+  datacenter_id = "${data.vsphere_datacenter.dc.id}"
+}
+
+resource "vsphere_virtual_machine" "vm1" {
+  count            = 5
+  name             = "apache-web-server-${count.index + 1}"
+  resource_pool_id = "${data.vsphere_compute_cluster.cluster.resource_pool_id}"
+  datastore_id     = "${data.vsphere_datastore.datastore.id}"
+  firmware         = "${var.vsphere_vm_firmware}"
+
+  num_cpus = 2
+  memory   = 4096
+  guest_id = "${data.vsphere_virtual_machine.template.guest_id}"
+
+  scsi_type = "${data.vsphere_virtual_machine.template.scsi_type}"
+
+  network_interface {
+    network_id   = "${data.vsphere_network.network.id}"
+    adapter_type = "${data.vsphere_virtual_machine.template.network_interface_types[0]}"
+  }
+
+  disk {
+    label            = "disk0"
+    size             = "${data.vsphere_virtual_machine.template.disks.0.size}"
+    #eagerly_scrub    = "${data.vsphere_virtual_machine.template.disks.0.eagerly_scrub}"
+    # eagerly_scrub    = true
+    thin_provisioned = "${data.vsphere_virtual_machine.template.disks.0.thin_provisioned}"
+  }
+
+  clone {
+    template_uuid = "${data.vsphere_virtual_machine.template.id}"
+
+    customize {
+      linux_options {
+        host_name = "apache-webserver-${count.index + 1}"
+        domain    = "bitpass.com"
+      }
+
+      network_interface {
+        ipv4_address = "192.168.52.${101 + count.index}"
+        ipv4_netmask = 24
+      }
+
+      ipv4_gateway = "192.168.52.254"
+
+    }
+  }
+  
+  provisioner "remote-exec"  {
+    inline = [
+    "mkdir /home/.ssh",
+    "chmod 700 /home/.ssh",
+    "touch /home/.ssh/authorized_keys",
+    "chmod 600 /home/.ssh/authorized_keys",
+    "echo ${var.ssh-pub-key} >> /home/.ssh/authorized_keys",
+
+    ]
+
+    connection {
+    type     = "ssh"
+    user     = "${var.service_account_username}"
+    password = "${var.service_account_password}"
+    host     = "192.168.52.${101 + count.index}"
+    }
+  }
+  
+ } # "vsphere_virtual_machine" "vm1" 
+ 
+# Connect to Ansible Server to execute Ansible-playbook
+resource "null_resource" "ansible-playbook" {
+    
+    provisioner "file" {
+        source      = "./"
+        destination = "/tmp"
+        
+        connection {
+        type     = "ssh"
+        user     = "${var.service_account_username}"
+        password = "${var.service_account_password}"
+        host     = "${var.ansible_host}"
+        }
+      }
+      
+      
+    provisioner "remote-exec"  {
+        inline = [
+        "ansible-playbook --private-key /root/.ssh/appache_web -u ${var.service_account_username} -i /tmp/apache-web-servers.txt /tmp/main.yml"
+
+        ]
+
+        connection {
+        type     = "ssh"
+        user     = "${var.service_account_username}"
+        password = "${var.service_account_password}"
+        host     = "${var.ansible_host}"
+        }
+      }
+  
+	depends_on = [vsphere_virtual_machine.vm1] # Let's not kick off this resource until the VMs are created
+}
+
+
+
+# Deploy the AppDynamics cluster agent using AppDynamic's helm chart
+resource "helm_release" "cluster-agent" {
+  name = "cluster-agent"
+  namespace = "appdynamics"
+  repository = "https://ciscodevnet.github.io/appdynamics-charts"
+  chart = "cluster-agent"
+
+  values = [
+    file("${path.module}/iks-cluster-2.yaml")
+  ]
+# Values below are required the cluster agent configuration file. The values are
+# available in sensitive.yaml.
+  set_sensitive {
+    name  = "controllerInfo.url"
+    value = var.controller_url
+  }
+  
+  set_sensitive {
+    name  = "controllerInfo.account"
+    value = var.controller_account
+  }
+  
+  set_sensitive {
+    name  = "controllerInfo.username"
+    value = var.controller_username
+  }
+  
+  set_sensitive {
+    name  = "controllerInfo.password"
+    value = var.controller_password
+  }
+  
+  set_sensitive {
+    name  = "controllerInfo.accessKey"
+    value = var.controller_accessKey
+  }
+}

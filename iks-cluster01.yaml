@@ -1,0 +1,14 @@
+# AppDynamics controller info
+# controllerInfo values are declared in terraform-appd-cluster-agent.tf
+installClusterAgent: true
+
+imageInfo:
+  agentImage: docker.io/appdynamics/cluster-agent
+  agentTag: 22.1.0
+  operatorImage: docker.io/appdynamics/cluster-agent-operator
+  operatorTag: latest
+  imagePullPolicy: Always 
+
+  # Cluster agent config
+clusterAgent:
+  nsToMonitor: [default,iks,kube-node-lease,kube-public,kube-system,appdynamics,mongodb-namespace]
