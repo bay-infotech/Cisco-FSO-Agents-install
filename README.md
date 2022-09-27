@@ -1,3 +1,4 @@
+[![published](https://static.production.devnetcloud.com/codeexchange/assets/images/devnet-published.svg)](https://developer.cisco.com/codeexchange/github/repo/bay-infotech/Cisco-FSO-Agents-install)
 
 # Automate deployment of FSO Machine Agent
 
